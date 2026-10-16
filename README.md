@@ -137,7 +137,7 @@ KISA 「주요정보통신기반시설 기술적 취약점 분석·평가 방법
 | `IdentityManagement` | 계정·비밀번호·권한 관련 항목 (root 원격 접속 제한, 비밀번호 정책, 계정 잠금 임계값 등) |
 | `FileDirectoryManagement` | 주요 파일·디렉터리 소유자와 권한 (`/etc/passwd`, `/etc/shadow`, SUID/SGID 등) |
 | `ServiceManagement` | 네트워크·원격·불필요 서비스 |
-| `PatchManagement` | OS와 주요 소프트웨어 보안 패치 상태 |
+| `PatchManagement` | 보안 패치 점검(U-64) — **미구현** (클래스 틀만 있고 점검 로직은 아직 없음) |
 | `LogManagement` | 보안 로그 설정·보관·검토 |
 | `ReportManager` | 결과(진단결과·판정사유)를 콘솔 표로 출력하고 JSON 보고서로 저장 |
 | `UnixServer` | `main.py` 연동 Wrapper — `check_list`의 각 항목을 실행해 `(진단결과, 판정사유)`를 반환, 오류가 나면 전체를 멈추지 않고 "검토오류"로 기록 |

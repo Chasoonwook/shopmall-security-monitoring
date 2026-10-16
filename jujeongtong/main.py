@@ -69,7 +69,5 @@ def main():
         conn.disconnect()
         print("SSH 접속을 해제합니다.")
 
-        print(sql_mgr)
-
 if __name__ == "__main__":
     main()
