@@ -7,7 +7,7 @@
 | 기간 | 2026.08.03 ~ 2026.08.14 (2주) |
 | 인원 | 19명 팀 프로젝트 (블루·레드·퍼플팀) — 국비교육 정보보안 전문가 과정 2차 프로젝트 |
 | 내 역할 | 퍼플팀(보안 관제) — **서버 로그 수집·분석 파트**, **주정통 점검 코드 Unix 모듈** |
-| 주요 기술 | Rocky Linux 9, Ubuntu 24.04, rsyslog (imfile·imtcp), syslog-ng, logrotate, auditd, ModSecurity, MariaDB Audit, Bash, Python, Paramiko |
+| 주요 기술 | Rocky Linux 9, Ubuntu 24.04, rsyslog (imfile·imtcp), syslog-ng, logrotate, auditd, ModSecurity, MariaDB, MariaDB Audit, Bash, Python, Paramiko, Netmiko, PyMySQL |
 
 ### 프로젝트 전체 구성
 
@@ -69,6 +69,8 @@
 - 상관분석이 가능하도록 전 서버 타임스탬프를 `RSYSLOG_FileFormat`(ISO-8601)으로 통일하고 NTP로 시각을 동기화했습니다.
 - 적용 후 `rsyslogd -N1`로 문법을, `ss -tlnp`로 수신 포트를 검증합니다.
 
+> `setup_agent.sh`·`setup_central.sh`는 실습 환경에만 남아 있어 이 레포에는 포함하지 않았고, 아래 실행 화면으로 대체합니다.
+
 C&C 수신 설정 (`/etc/rsyslog.d/central.conf`):
 
 ```
@@ -93,6 +95,7 @@ template(name="RemoteLogTemplate" type="string"
 C&C 서버에 원격 로그가 무제한으로 쌓여 디스크가 가득 차면 관제 전체가 멈추기 때문에 보관 기준을 정했습니다.
 
 ```
+# 보고서 기준 설정값을 바탕으로 재구성한 예시 (실제 설정 파일 원본 아님)
 /var/log/remote/*/*.log {
     daily
     size 100M
@@ -117,6 +120,8 @@ C&C 서버에 원격 로그가 무제한으로 쌓여 디스크가 가득 차면
 ### 3-4. 파싱·DB 적재와 Python 로그 분석
 
 C&C에 수신된 로그를 종류별로 파싱해 Log DB 테이블에 적재하고, 퍼플팀원들과 함께 정한 아래 기준으로 공격을 판정해 `detect_reason`에 기록합니다. 전체 기준과 시나리오별 상세 분석은 [docs/log-analysis.md](./docs/log-analysis.md)에 정리했습니다.
+
+> 파싱·DB 적재 코드도 실습 환경에만 남아 있어 레포에는 포함하지 않았습니다.
 
 | 탐지 항목 | 로그 소스 | 판정 기준 |
 |---|---|---|
@@ -146,6 +151,19 @@ KISA 「주요정보통신기반시설 기술적 취약점 분석·평가 방법
 - Rocky(RedHat 계열)와 Ubuntu(Debian 계열)를 자동으로 구분해, OS별로 다른 설정 파일 위치와 PAM 모듈을 점검합니다.
 - 결과는 DB에 적재되어 점검 대시보드에서 실행 일시·장치별로 조회됩니다.
 - 접속 계정·비밀번호는 코드에 두지 않고 실행할 때 입력받습니다.
+
+**실행 방법** (Python 3.11 이상, 결과 저장용 MariaDB 필요)
+
+```bash
+cd jujeongtong
+pip install -r requirements.txt
+# device_list.json에 점검 대상(IP·포트·계정)을 적고 실행 — 비밀번호는 실행 중에 입력
+export JJT_DB_PASSWORD='<DB 비밀번호>'   # 생략하면 실행 중에 입력
+python main.py
+
+# Unix 서버 한 대만 단독 점검 (결과는 JSON 파일로 저장)
+python team_works/unix_server.py
+```
 
 ## 4. 트러블슈팅
 
@@ -230,6 +248,7 @@ C&C 서버의 `/var/log/remote/` 아래에 송신 서버 IP별 디렉터리와 �
 ├── images/               # 구성도, 실행·결과 스크린샷
 └── jujeongtong/          # 주정통 점검 코드 (팀 공통 main.py + 팀별 점검 모듈)
     ├── main.py
+    ├── requirements.txt
     └── team_works/
         └── unix_server.py   # 내가 작성한 Unix 점검 모듈
 ```
