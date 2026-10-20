@@ -86,6 +86,16 @@ template(name="RemoteLogTemplate" type="string"
          string="/var/log/remote/%fromhost-ip%/%programname%.log")
 ```
 
+직접 작성한 수신 설정 파일([`configs/rsyslog/center.conf`](./configs/rsyslog/center.conf), `/etc/rsyslog.d/center.conf`)도 함께 올렸습니다. UDP·TCP 514로 로그를 받고, 루프백(127.0.0.1)이 아닌 원격 로그만 송신 IP별 파일에 저장한 뒤 `stop`으로 처리를 끝내 C&C 서버 자체 로그(`/var/log/messages` 등)와 섞이지 않게 했습니다. `setup_central.sh`가 만드는 위 설정은 여기에 보안 장비용 TCP 5140 수신을 더하고, `ruleset`으로 서버 로그와 보안 장비 로그를 분리합니다.
+
+```
+# 3. 루프백(127.0.0.1)이 아닌 외부 수신 로그를 해당 템플릿 파일로 저장
+if ($fromhost-ip != '127.0.0.1') then {
+    action(type="omfile" dynafile="RemoteLogTemplate")
+    stop
+}
+```
+
 | setup_agent.sh (Rocky) | setup_central.sh |
 |---|---|
 | ![setup_agent.sh 실행](./images/setup_agent_rocky.png) | ![setup_central.sh 실행](./images/setup_central_run.png) |
@@ -243,6 +253,8 @@ C&C 서버의 `/var/log/remote/` 아래에 송신 서버 IP별 디렉터리와 �
 ```
 .
 ├── README.md
+├── configs/
+│   └── rsyslog/center.conf  # 직접 작성한 C&C 로그 수신 설정
 ├── docs/
 │   └── log-analysis.md   # 로그 분석 기준 전체, 시나리오별 상관분석 상세
 ├── images/               # 구성도, 실행·결과 스크린샷
