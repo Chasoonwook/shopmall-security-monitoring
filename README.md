@@ -96,6 +96,18 @@ if ($fromhost-ip != '127.0.0.1') then {
 }
 ```
 
+로그를 보내는 쪽 설정([`configs/rsyslog/agent.conf`](./configs/rsyslog/agent.conf))도 올렸습니다. MariaDB audit·nginx access·auditd·ModSecurity·DNS query 로그 파일을 `imfile`로 읽어 태그를 붙이고, C&C 수신 서버의 514 포트로 전달합니다. 이 설정은 UDP(`@`)로 보내고 모든 로그를 `local0`으로 묶었으며, 최종 정책에서는 TCP 514로 전송하고 로그별로 Facility를 나눴습니다(위 관제 대상 로그 표 참고).
+
+```
+input(type="imfile"
+      File="/var/log/mariadb/mariadb-audit.log"
+      Tag="mariadb-audit"
+      Severity="info"
+      Facility="local0")
+
+local0.* @<C&C 서버 IP>:514
+```
+
 | setup_agent.sh (Rocky) | setup_central.sh |
 |---|---|
 | ![setup_agent.sh 실행](./images/setup_agent_rocky.png) | ![setup_central.sh 실행](./images/setup_central_run.png) |
@@ -254,7 +266,9 @@ C&C 서버의 `/var/log/remote/` 아래에 송신 서버 IP별 디렉터리와 �
 .
 ├── README.md
 ├── configs/
-│   └── rsyslog/center.conf  # 직접 작성한 C&C 로그 수신 설정
+│   └── rsyslog/
+│       ├── agent.conf    # 로그 송신 서버 설정 (imfile → C&C 전달)
+│       └── center.conf   # C&C 로그 수신 설정
 ├── docs/
 │   └── log-analysis.md   # 로그 분석 기준 전체, 시나리오별 상관분석 상세
 ├── images/               # 구성도, 실행·결과 스크린샷
