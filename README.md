@@ -1,6 +1,6 @@
 # 쇼핑몰 인프라 보안 관제 — 서버 로그 중앙 수집·분석 & 주정통 Unix 점검
 
-> 쇼핑몰 인프라의 서버 보안 로그 7종을 C&C 관제 서버로 모으는 수집 체계를 자동화 스크립트로 구축하고, 여러 계층의 로그를 상관분석해 4개 공격 시나리오의 **실제 성공 여부**를 확정했습니다. 주요정보통신기반시설(주정통) 가이드 기준 Unix 서버 취약점 점검 모듈(54개 항목)도 구현했습니다.
+> 쇼핑몰 인프라의 서버 보안 로그 7종을 C&C 관제 서버로 모으는 수집 체계를 rsyslog로 구성하고(설정 자동화 스크립트는 퍼플팀 공동 제작), 여러 계층의 로그를 상관분석해 4개 공격 시나리오의 **실제 성공 여부**를 확정했습니다. 주요정보통신기반시설(주정통) 가이드 기준 Unix 서버 취약점 점검 모듈(54개 항목)도 구현했습니다.
 
 | 항목 | 내용 |
 |---|---|
@@ -22,7 +22,7 @@
 ## 1. 목표
 
 - **무엇을**: 쇼핑몰 서비스 서버들의 보안 로그(웹·WAF·DB·OS·DNS·FTP·SNMP)를 C&C 관제 서버 한 곳으로 모아 파싱·DB 적재하고, 공격 의도를 판정하는 수집·분석 체계를 구축. KISA 주정통 가이드 기반으로 Unix 서버를 자동 점검하는 모듈 구현.
-- **왜**: 레드팀 공격이 "시도"에 그쳤는지 "성공"했는지는 로그 한 종류로는 판단할 수 없어서, 여러 계층 로그를 같은 시간축에 놓고 비교할 기반이 필요했습니다. 또 서버마다 OS·서비스 조합이 달라 수작업으로 설정하면 누락과 불일치가 생기기 쉬워 설정 과정을 스크립트로 표준화했습니다.
+- **왜**: 레드팀 공격이 "시도"에 그쳤는지 "성공"했는지는 로그 한 종류로는 판단할 수 없어서, 여러 계층 로그를 같은 시간축에 놓고 비교할 기반이 필요했습니다. 또 서버마다 OS·서비스 조합이 달라 수작업으로 설정하면 누락과 불일치가 생기기 쉬워 팀원들과 함께 설정 과정을 스크립트로 표준화했습니다.
 
 ## 2. 구성도
 
@@ -58,7 +58,39 @@
 | ftp | src_ip·pid | event_time | target_user | log_detail | event_type | detect_reason |
 | snmp | src_ip | event_time | community | log_detail | event_type | detect_reason |
 
-### 3-2. 로그 송수신 자동화 스크립트
+### 3-2. 로그 송수신 설정
+
+#### 직접 작성한 rsyslog 설정 ([`configs/rsyslog/`](./configs/rsyslog/))
+
+| 파일 | 위치 | 역할 |
+|---|---|---|
+| [`agent.conf`](./configs/rsyslog/agent.conf) | 로그 송신 서버 | MariaDB audit·nginx access·auditd·ModSecurity·DNS query 로그 파일을 `imfile`로 읽어 C&C 수신 서버 514 포트로 전달 |
+| [`center.conf`](./configs/rsyslog/center.conf) | C&C 수신 서버 (`/etc/rsyslog.d/center.conf`) | UDP·TCP 514로 수신, 원격 로그만 송신 IP별 파일로 저장 |
+
+C&C 수신 쪽은 루프백(127.0.0.1)이 아닌 원격 로그만 `/var/log/remote/<송신 IP>/<프로그램명>.log`에 저장한 뒤 `stop`으로 처리를 끝내, C&C 서버 자체 로그(`/var/log/messages` 등)와 섞이지 않게 했습니다.
+
+```
+template(name="RemoteLogTemplate" type="string" string="/var/log/remote/%fromhost-ip%/%programname%.log")
+
+if ($fromhost-ip != '127.0.0.1') then {
+    action(type="omfile" dynafile="RemoteLogTemplate")
+    stop
+}
+```
+
+송신 쪽은 로그 파일마다 태그를 붙여 C&C로 보냅니다. 이 설정은 UDP(`@`)로 보내고 모든 로그를 `local0`으로 묶었으며, 최종 정책에서는 TCP 514로 전송하고 로그별로 Facility를 나눴습니다(위 관제 대상 로그 표 참고).
+
+```
+input(type="imfile"
+      File="/var/log/mariadb/mariadb-audit.log"
+      Tag="mariadb-audit"
+      Severity="info"
+      Facility="local0")
+
+local0.* @<C&C 서버 IP>:514
+```
+
+#### 설정 자동화 스크립트 (퍼플팀 공동 제작)
 
 | 스크립트 | 대상 | 주요 동작 |
 |---|---|---|
@@ -69,9 +101,7 @@
 - 상관분석이 가능하도록 전 서버 타임스탬프를 `RSYSLOG_FileFormat`(ISO-8601)으로 통일하고 NTP로 시각을 동기화했습니다.
 - 적용 후 `rsyslogd -N1`로 문법을, `ss -tlnp`로 수신 포트를 검증합니다.
 
-> `setup_agent.sh`·`setup_central.sh`는 실습 환경에만 남아 있어 이 레포에는 포함하지 않았고, 아래 실행 화면으로 대체합니다.
-
-C&C 수신 설정 (`/etc/rsyslog.d/central.conf`):
+`setup_central.sh`가 만드는 C&C 수신 설정(`/etc/rsyslog.d/central.conf`)은 직접 작성한 `center.conf`와 비교하면 보안 장비용 TCP 5140 수신이 추가되고, `ruleset`으로 서버 로그와 보안 장비 로그를 분리합니다.
 
 ```
 module(load="imtcp")
@@ -86,27 +116,7 @@ template(name="RemoteLogTemplate" type="string"
          string="/var/log/remote/%fromhost-ip%/%programname%.log")
 ```
 
-직접 작성한 수신 설정 파일([`configs/rsyslog/center.conf`](./configs/rsyslog/center.conf), `/etc/rsyslog.d/center.conf`)도 함께 올렸습니다. UDP·TCP 514로 로그를 받고, 루프백(127.0.0.1)이 아닌 원격 로그만 송신 IP별 파일에 저장한 뒤 `stop`으로 처리를 끝내 C&C 서버 자체 로그(`/var/log/messages` 등)와 섞이지 않게 했습니다. `setup_central.sh`가 만드는 위 설정은 여기에 보안 장비용 TCP 5140 수신을 더하고, `ruleset`으로 서버 로그와 보안 장비 로그를 분리합니다.
-
-```
-# 3. 루프백(127.0.0.1)이 아닌 외부 수신 로그를 해당 템플릿 파일로 저장
-if ($fromhost-ip != '127.0.0.1') then {
-    action(type="omfile" dynafile="RemoteLogTemplate")
-    stop
-}
-```
-
-로그를 보내는 쪽 설정([`configs/rsyslog/agent.conf`](./configs/rsyslog/agent.conf))도 올렸습니다. MariaDB audit·nginx access·auditd·ModSecurity·DNS query 로그 파일을 `imfile`로 읽어 태그를 붙이고, C&C 수신 서버의 514 포트로 전달합니다. 이 설정은 UDP(`@`)로 보내고 모든 로그를 `local0`으로 묶었으며, 최종 정책에서는 TCP 514로 전송하고 로그별로 Facility를 나눴습니다(위 관제 대상 로그 표 참고).
-
-```
-input(type="imfile"
-      File="/var/log/mariadb/mariadb-audit.log"
-      Tag="mariadb-audit"
-      Severity="info"
-      Facility="local0")
-
-local0.* @<C&C 서버 IP>:514
-```
+> 두 스크립트는 실습 환경에만 남아 있어 이 레포에는 포함하지 않았고, 아래 실행 화면으로 대체합니다.
 
 | setup_agent.sh (Rocky) | setup_central.sh |
 |---|---|
@@ -243,7 +253,8 @@ C&C 서버의 `/var/log/remote/` 아래에 송신 서버 IP별 디렉터리와 �
 | 목표 | 결과 |
 |---|---|
 | 관제 대상 로그 종류 정리 및 선정 (7종) | ✅ |
-| 서버 로그 설정 자동화 스크립트 (Rocky·Ubuntu, nginx·Apache 조합) | ✅ |
+| C&C 수신·송신 rsyslog 설정 (`center.conf`, `agent.conf`) | ✅ |
+| 서버 로그 설정 자동화 스크립트 (Rocky·Ubuntu, nginx·Apache 조합, 퍼플팀 공동) | ✅ |
 | 리눅스 서버 로그의 C&C 중앙 전송 (rsyslog) | ✅ |
 | 보안 장비 로그의 C&C 수신 (syslog-ng → 5140) | ✅ |
 | C&C 로그 파싱 및 DB 적재 | ✅ |
@@ -255,7 +266,7 @@ C&C 서버의 `/var/log/remote/` 아래에 송신 서버 IP별 디렉터리와 �
 
 ## 회고
 
-- **잘한 점**: 서버마다 다른 OS·서비스 조합을 스크립트 하나로 표준화하고(OS 자동 인식, 설정 백업, 문법 검증), 누가 실행해도 같은 결과가 나오는 구축 절차를 만들었다. 로그 한 종류로는 판단할 수 없는 "공격 성공 여부"를 여러 계층의 로그를 같은 시간축으로 엮어 근거와 함께 확정했다.
+- **잘한 점**: rsyslog 수신·송신 설정을 직접 작성하며 로그 수집 구조를 익혔고, 팀원들과 함께 서버마다 다른 OS·서비스 조합을 스크립트로 표준화해(OS 자동 인식, 설정 백업, 문법 검증) 누가 실행해도 같은 결과가 나오는 구축 절차를 만들었다. 로그 한 종류로는 판단할 수 없는 "공격 성공 여부"를 여러 계층의 로그를 같은 시간축으로 엮어 근거와 함께 확정했다.
 - **아쉬운 점 / 다음에 개선할 점**: Windows 이벤트 로그 수집과 서버 방화벽 로그 연동을 마무리하지 못했다. 스크립트의 설정 원복이 수동이라, 다음에는 `.bak` 기반 자동 롤백 옵션을 추가하고 싶다. 주정통 점검 결과를 바탕으로 한 자동 조치는 원복 가능한 방식으로 설계해 보고 싶다.
 
 ---
