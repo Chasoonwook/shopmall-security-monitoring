@@ -2,6 +2,8 @@
 
 > 쇼핑몰 인프라의 서버 보안 로그 7종을 C&C 관제 서버로 모으는 수집 체계를 rsyslog로 구성하고(설정 자동화 스크립트는 퍼플팀 공동 제작), 여러 계층의 로그를 상관분석해 4개 공격 시나리오의 **실제 성공 여부**를 확정했습니다. 주요정보통신기반시설(주정통) 가이드 기준 Unix 서버 취약점 점검 모듈(54개 항목)도 구현했습니다.
 
+프로젝트 결과 보고서 https://docs.google.com/document/d/1ZIAXsIfJDDxGlGQS9ptAxGtcGP9q0mJadEiLo_jgYcY/edit?tab=t.lzq4bvzgquqb
+
 | 항목 | 내용 |
 |---|---|
 | 기간 | 2026.08.03 ~ 2026.08.14 (2주) |
